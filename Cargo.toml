@@ -2,5 +2,6 @@
 
 resolver = "2"
 members = [
-    "phistar_firmware"
+    "pager-firmware",
+    "base-firmware",
 ]
