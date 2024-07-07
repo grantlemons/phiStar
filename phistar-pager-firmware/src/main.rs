@@ -3,7 +3,7 @@
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
-use adafruit_feather_rp2040 as bsp;
+use adafruit_feather_rp2040_rfm9x as bsp;
 
 #[allow(unused_imports)]
 use defmt::*;
