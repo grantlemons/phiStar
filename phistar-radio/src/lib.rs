@@ -1,3 +1,5 @@
+use embedded_hal::spi::SpiDevice;
+
 enum RadioState {
     Sleep,
     StandBy,
@@ -18,7 +20,23 @@ struct RadioOptions {
     pub frequency: f32,
 }
 
-struct Rfm95x {
+trait PowerPin {
+    fn set_high(&mut self) -> Option<()>;
+    fn set_low(&mut self) -> Option<()>;
+}
+
+struct Rfm95xPins<P: PowerPin, SPI: SpiDevice> {
+    pub spi: SPI,
+    pub reset: P, // RFM_RST
+    pub dio5: P,
+    pub dio4: P,
+    pub dio3: P,
+    pub dio2: P,
+    pub dio1: P,
+    pub dio0: P,
+}
+struct Rfm95x<P: PowerPin, SPI: SpiDevice> {
+    pins: Rfm95xPins<P, SPI>,
     state: RadioState,
     options: RadioOptions,
 }
@@ -31,7 +49,7 @@ enum RadioError {
     RecieveError,
 }
 
-impl Rfm95x {
+impl<P: PowerPin, SPI: SpiDevice> Rfm95x<P, SPI> {
     pub fn set_state(&mut self, state: RadioState) -> Result<(), RadioError> {
         self.state = state;
         todo!()
@@ -58,7 +76,7 @@ impl RadioOptions {
     }
 }
 
-impl radio::Receive for Rfm95x {
+impl<P: PowerPin, SPI: SpiDevice> radio::Receive for Rfm95x<P, SPI> {
     type Error = RadioError;
     type Info;
 
@@ -75,7 +93,7 @@ impl radio::Receive for Rfm95x {
     }
 }
 
-impl radio::Transmit for Rfm95x {
+impl<P: PowerPin, SPI: SpiDevice> radio::Transmit for Rfm95x<P, SPI> {
     type Error = RadioError;
 
     fn start_transmit(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -87,7 +105,7 @@ impl radio::Transmit for Rfm95x {
     }
 }
 
-impl radio::Power for Rfm95x {
+impl<P: PowerPin, SPI: SpiDevice> radio::Power for Rfm95x<P, SPI> {
     type Error = RadioError;
 
     fn set_power(&mut self, power: i8) -> Result<(), Self::Error> {
@@ -96,7 +114,7 @@ impl radio::Power for Rfm95x {
     }
 }
 
-impl radio::Busy for Rfm95x {
+impl<P: PowerPin, SPI: SpiDevice> radio::Busy for Rfm95x<P, SPI> {
     type Error = RadioError;
 
     fn is_busy(&mut self) -> Result<bool, Self::Error> {

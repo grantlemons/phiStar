@@ -14,5 +14,4 @@ panic-probe = { version = "0.3", features = ["print-defmt"] }
 
 # We're using a Pico by default on this template
 adafruit-feather-rp2040-rfm9x = { git = "https://github.com/grantlemons/rp-hal-boards.git" }
-radio = "0.12.1"
-thiserror = "1.0.61"
+phistar-radio = { path = "../phistar-radio" }

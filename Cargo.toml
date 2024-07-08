@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "phistar-pager-firmware",
     "phistar-base-firmware",
+    "phistar-radio",
 ]
 
 # cargo build/run
