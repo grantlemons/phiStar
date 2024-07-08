@@ -1,6 +1,7 @@
 use embedded_hal::spi::SpiDevice;
+use radio::RadioState;
 
-enum RadioState {
+pub enum RadioState {
     Sleep,
     StandBy,
     FSTX,
@@ -11,7 +12,8 @@ enum RadioState {
     CAD,
 }
 
-struct RadioOptions {
+#[derive(Clone, Copy, Debug)]
+pub struct RadioOptions {
     /// 2 to 17 dBm
     pub power: i8,
     /// 1 to 6
@@ -20,12 +22,12 @@ struct RadioOptions {
     pub frequency: f32,
 }
 
-trait PowerPin {
+pub trait PowerPin {
     fn set_high(&mut self) -> Option<()>;
     fn set_low(&mut self) -> Option<()>;
 }
 
-struct Rfm95xPins<P: PowerPin, SPI: SpiDevice> {
+pub struct Rfm95xPins<P: PowerPin, SPI: SpiDevice> {
     pub spi: SPI,
     pub reset: P, // RFM_RST
     pub dio5: P,
@@ -35,10 +37,34 @@ struct Rfm95xPins<P: PowerPin, SPI: SpiDevice> {
     pub dio1: P,
     pub dio0: P,
 }
-struct Rfm95x<P: PowerPin, SPI: SpiDevice> {
+
+pub struct Rfm95x<P: PowerPin, SPI: SpiDevice> {
     pins: Rfm95xPins<P, SPI>,
     state: RadioState,
     options: RadioOptions,
+    buffer: [u8; 128],
+}
+
+impl<P: PowerPin, SPI: SpiDevice> Rfm95x<P, SPI> {
+    pub fn new(pins: Rfm95xPins<P, SPI>, options: RadioOptions) -> Self {
+        Self {
+            pins,
+            state: RadioState::StandBy,
+            options,
+            buffer: [0; 128],
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ReceiveInfo {
+    rssi: i16,
+}
+
+impl radio::ReceiveInfo for ReceiveInfo {
+    fn rssi(&self) -> i16 {
+        self.rssi
+    }
 }
 
 #[derive(Debug)]
@@ -61,24 +87,28 @@ impl<P: PowerPin, SPI: SpiDevice> Rfm95x<P, SPI> {
 }
 
 impl RadioOptions {
-    pub fn verify(self) -> bool {
-        self.verify_power() && self.verify_gain() && self.verify_frequency()
+    pub fn verify(&self) -> bool {
+        Self::verify_power_value(&self.power)
+            && Self::verify_gain_value(&self.gain)
+            && Self::verify_frequency_value(&self.frequency)
     }
 
-    fn verify_power(self) -> bool {
-        (2..17).contains(&self.power)
+    pub fn verify_power_value(power: &i8) -> bool {
+        (2..17).contains(power)
     }
-    fn verify_gain(self) -> bool {
-        (1..6).contains(&self.gain)
+
+    pub fn verify_gain_value(gain: &i8) -> bool {
+        (1..6).contains(gain)
     }
-    fn verify_frequency(self) -> bool {
-        (868.0..915.0).contains(&self.frequency)
+
+    pub fn verify_frequency_value(frequency: &f32) -> bool {
+        (868.0..915.0).contains(frequency)
     }
 }
 
 impl<P: PowerPin, SPI: SpiDevice> radio::Receive for Rfm95x<P, SPI> {
     type Error = RadioError;
-    type Info;
+    type Info = ReceiveInfo;
 
     fn start_receive(&mut self) -> Result<(), Self::Error> {
         todo!()
@@ -109,6 +139,9 @@ impl<P: PowerPin, SPI: SpiDevice> radio::Power for Rfm95x<P, SPI> {
     type Error = RadioError;
 
     fn set_power(&mut self, power: i8) -> Result<(), Self::Error> {
+        if !RadioOptions::verify_power_value(&power) {
+            return Err(RadioError::InvalidOptions);
+        }
         self.options.power = power;
         todo!()
     }
