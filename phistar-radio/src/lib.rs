@@ -1,5 +1,4 @@
 use embedded_hal::spi::SpiDevice;
-use radio::RadioState;
 
 pub enum RadioState {
     Sleep,
@@ -68,7 +67,7 @@ impl radio::ReceiveInfo for ReceiveInfo {
 }
 
 #[derive(Debug)]
-enum RadioError {
+pub enum RadioError {
     InvalidOptions,
     StateError,
     TransmitError,
