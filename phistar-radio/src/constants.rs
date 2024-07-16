@@ -1,0 +1,35 @@
+#![allow(dead_code)]
+
+pub const REG_FIFO: u8 = 0x00;
+pub const REG_OP_MODE: u8 = 0x01;
+pub const REG_FR_LSB: u8 = 0x08;
+pub const REG_PA_CONFIG: u8 = 0x09;
+pub const REG_PA_RAMP: u8 = 0x0A;
+pub const REG_OCP: u8 = 0x0B;
+pub const REG_LNA: u8 = 0x0C;
+pub const REG_FIFO_ADDR_PTR: u8 = 0x0D;
+pub const REG_FIFO_TX_BASE_ADDR: u8 = 0x0E;
+pub const REG_FIFO_RX_BASE_ADDR: u8 = 0x0F;
+pub const REG_FIFO_RX_CURRENT_ADDR: u8 = 0x10;
+pub const REG_IRQ_FLAGS_MASK: u8 = 0x11;
+pub const REG_IRQ_FLAGS: u8 = 0x12;
+pub const REG_RX_NB_BYTES: u8 = 0x13;
+pub const REG_RX_HEADER_CNT_VALUE_MSB: u8 = 0x14;
+pub const REG_RX_HEADER_CNT_VALUE_LSB: u8 = 0x15;
+pub const REG_RX_PACKET_CNT_VALUE_MSB: u8 = 0x16;
+pub const REG_RX_PACKET_CNT_VALUE_LSB: u8 = 0x17;
+pub const REG_MODEM_STAT: u8 = 0x18;
+pub const REG_PKT_SNR_VALUE: u8 = 0x19;
+pub const REG_PKT_RSSI_VALUE: u8 = 0x1A;
+pub const REG_RSSI_VALUE: u8 = 0x1B;
+pub const REG_HOP_CHANNEL: u8 = 0x1C;
+pub const REG_MODEM_CONFIG_1: u8 = 0x1D;
+pub const REG_MODEM_CONFIG_2: u8 = 0x1E;
+pub const REG_SYMB_TIMEOUT_LSB: u8 = 0x1F;
+pub const REG_PREAMBLE_MSB: u8 = 0x20;
+pub const REG_PREAMBLE_LSB: u8 = 0x21;
+pub const REG_PAYLOAD_LENGTH: u8 = 0x22;
+pub const REG_MAX_PAYLOAD_LENGTH: u8 = 0x23;
+pub const REG_HOP_PERIOD: u8 = 0x24;
+pub const REG_FIFO_RX_BYTE_HEADER: u8 = 0x25;
+pub const REG_MODEM_CONFIG_3: u8 = 0x26;

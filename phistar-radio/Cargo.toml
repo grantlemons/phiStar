@@ -7,5 +7,3 @@ edition = "2021"
 
 [dependencies]
 embedded-hal = "1.0.0"
-embedded-hal-bus = "0.2.0"
-radio = "0.12.1"
