@@ -1,81 +1,24 @@
 #![no_std]
 
 const BUFFER_SIZE: usize = 256;
+const FXOSC: u8 = 32;
+const TWO_POW_19: u32 = 524288;
 
 use core::{marker::PhantomData, usize};
 use embedded_hal::i2c::{I2c, SevenBitAddress};
 
+mod config_options;
 mod constants;
+use config_options::*;
 use constants::*;
 
 pub trait RState {}
-pub enum RadioMode {
-    SLEEP,
-    STDBY,
-    FSTX,
-    TX,
-    FSRX,
-    RXCONTINUOUS,
-    RXSINGLE,
-    CAD,
-}
+pub trait ChangeFrequency: RState {}
+pub trait Recieve: RState + ReadBuffer {}
+pub trait Transmit: RState + WriteBuffer {}
 
-impl Into<u8> for RadioMode {
-    fn into(self) -> u8 {
-        match self {
-            RadioMode::SLEEP => 0b000,
-            RadioMode::STDBY => 0b010,
-            RadioMode::FSTX => 0b010,
-            RadioMode::TX => 0b011,
-            RadioMode::FSRX => 0b100,
-            RadioMode::RXCONTINUOUS => 0b101,
-            RadioMode::RXSINGLE => 0b110,
-            RadioMode::CAD => 0b111,
-        }
-    }
-}
-
-pub enum BandwithOptions {
-    Bw007_8,
-    Bw010_4,
-    Bw015_6,
-    Bw020_8,
-    Bw031_25,
-    Bw041_7,
-    Bw062_5,
-    Bw125_0,
-    Bw250_0,
-    Bw500_0,
-}
-
-impl Into<u8> for BandwithOptions {
-    fn into(self) -> u8 {
-        match self {
-            BandwithOptions::Bw007_8 => 0b0000,
-            BandwithOptions::Bw010_4 => 0b0001,
-            BandwithOptions::Bw015_6 => 0b0010,
-            BandwithOptions::Bw020_8 => 0b0011,
-            BandwithOptions::Bw031_25 => 0b0100,
-            BandwithOptions::Bw041_7 => 0b0101,
-            BandwithOptions::Bw062_5 => 0b0110,
-            BandwithOptions::Bw125_0 => 0b0111,
-            BandwithOptions::Bw250_0 => 0b1000,
-            BandwithOptions::Bw500_0 => 0b1001,
-        }
-    }
-}
-
-pub fn i2c_write_bits(i2c: &mut impl I2c, address: SevenBitAddress, mask: u8, value: u8) {
-    let mut address_contents = [0; 1];
-    i2c.read(address, &mut address_contents)
-        .expect("I2C mode-change transaction failed!");
-
-    address_contents[0] &= !mask;
-    address_contents[0] |= value & mask;
-
-    i2c.write(address, &address_contents)
-        .expect("I2C mode-change transaction failed!");
-}
+pub trait ReadBuffer: RState {}
+pub trait WriteBuffer: RState {}
 
 macro_rules! add_state {
     ($n:ident,$fn:ident,$eq:path) => {
@@ -83,15 +26,12 @@ macro_rules! add_state {
         impl RState for $n {}
         impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
             pub fn $fn(mut self) -> RadioDevice<$n, P, I2C> {
-                i2c_write_bits(
-                    &mut self.rfm95x.pins.i2c,
-                    REG_OP_MODE,
-                    0b0000_0011,
-                    $eq.into(),
-                );
+                i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 0b0000_0011, $eq.into())
+                    .expect("Failed to change mode (I2C write error)");
 
                 RadioDevice {
-                    rfm95x: self.rfm95x,
+                    pins: self.pins,
+                    options: self.options,
                     state: PhantomData::<$n>::default(),
                 }
             }
@@ -112,14 +52,47 @@ add_state!(RXContinuousState, rxcontinuous, RadioMode::RXCONTINUOUS);
 add_state!(RXSingleState, rxsingle, RadioMode::RXSINGLE);
 add_state!(CADState, cad, RadioMode::CAD);
 
+impl ChangeFrequency for SleepState {}
+impl ChangeFrequency for StandByState {}
+
+impl ReadBuffer for RXContinuousState {}
+impl ReadBuffer for RXSingleState {}
+impl ReadBuffer for FSRXState {}
+impl Recieve for RXContinuousState {}
+impl Recieve for RXSingleState {}
+impl Recieve for FSRXState {}
+
+impl WriteBuffer for FSTXState {}
+impl WriteBuffer for TXState {}
+impl Transmit for FSTXState {}
+impl Transmit for TXState {}
+
+pub fn i2c_write_bits<I2C: I2c>(
+    i2c: &mut I2C,
+    address: SevenBitAddress,
+    mask: u8,
+    value: u8,
+) -> Result<(), I2C::Error> {
+    let mut address_contents = [0; 1];
+    i2c.read(address, &mut address_contents)?;
+
+    address_contents[0] &= !mask;
+    address_contents[0] |= value & mask;
+
+    i2c.write(address, &address_contents)?;
+
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct RadioOptions {
     /// 2 to 17 dBm
-    pub power: i8,
+    power: u8,
     /// 1 to 6
-    pub gain: i8,
+    gain: u8,
     /// 868.0 to 915.0 allowed
-    pub frequency: f32,
+    frequency: f32,
+    bandwith: BandwithOptions,
 }
 
 pub trait PowerPin {
@@ -138,67 +111,92 @@ pub struct Rfm95xPins<P: PowerPin, I2C: I2c> {
     pub dio0: P,
 }
 
-pub struct Rfm95x<P: PowerPin, I2C: I2c> {
-    pins: Rfm95xPins<P, I2C>,
-    state: RadioMode,
-    options: RadioOptions,
-}
-
 pub struct RadioDevice<T: RState, P: PowerPin, I2C: I2c> {
-    rfm95x: Rfm95x<P, I2C>,
+    pins: Rfm95xPins<P, I2C>,
+    options: RadioOptions,
     state: PhantomData<T>,
 }
 
-impl<P: PowerPin, I2C: I2c> RadioDevice<SleepState, P, I2C> {
-    pub fn fsk_ook(&mut self) {
-        i2c_write_bits(&mut self.rfm95x.pins.i2c, REG_OP_MODE, 0b1000_0000, 0b0);
-    }
-    pub fn lora(&mut self) {
-        i2c_write_bits(&mut self.rfm95x.pins.i2c, REG_OP_MODE, 0b1000_0000, 0b1);
-    }
-}
-
 impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
-    fn set_gain(&mut self, gain: u8) {
-        i2c_write_bits(&mut self.rfm95x.pins.i2c, REG_LNA, 0b1110_0000, gain);
+    pub fn set_power(&mut self, power: u8) -> Result<(), I2C::Error> {
+        i2c_write_bits(&mut self.pins.i2c, REG_PA_CONFIG, 0b0000_1111, power)?;
+        self.options.power = power;
+        Ok(())
     }
-    fn set_bandwith(&mut self, bandwith: BandwithOptions) {
+    pub fn set_gain(&mut self, gain: u8) -> Result<(), I2C::Error> {
+        i2c_write_bits(&mut self.pins.i2c, REG_LNA, 0b1110_0000, gain)?;
+        self.options.gain = gain;
+        Ok(())
+    }
+    pub fn set_bandwith(&mut self, bandwith: BandwithOptions) -> Result<(), I2C::Error> {
         i2c_write_bits(
-            &mut self.rfm95x.pins.i2c,
+            &mut self.pins.i2c,
             REG_MODEM_CONFIG_1,
             0b1111_0000,
             bandwith.into(),
-        );
+        )?;
+        self.options.bandwith = bandwith;
+        Ok(())
     }
 }
 
-impl<P: PowerPin, I2C: I2c> Rfm95x<P, I2C> {
-    pub fn new(pins: Rfm95xPins<P, I2C>, options: RadioOptions) -> Self {
-        Self {
-            pins,
-            state: RadioMode::STDBY,
-            options,
-        }
-    }
-
-    pub fn buffer(&mut self) -> ([u8; BUFFER_SIZE], u8) {
+impl<S: ReadBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+    pub fn read_buffer(&mut self) -> Result<([u8; BUFFER_SIZE], u8), I2C::Error> {
         let i2c = &mut self.pins.i2c;
 
-        let mut current_addr = [0; 1];
-        i2c.read(REG_FIFO_RX_CURRENT_ADDR, &mut current_addr)
-            .expect("Unable to read from I2C");
-        i2c.write(REG_FIFO_ADDR_PTR, &current_addr)
-            .expect("Unable to write to I2C");
+        let mut addr = [0; 1];
+        i2c.read(REG_FIFO_RX_CURRENT_ADDR, &mut addr)?;
+        i2c.write(REG_FIFO_ADDR_PTR, &addr)?;
 
         let mut payload_length = [0; 1];
-        i2c.read(REG_RX_NB_BYTES, &mut payload_length)
-            .expect("Unable to read from I2C");
+        i2c.read(REG_RX_NB_BYTES, &mut payload_length)?;
 
         let mut read_buffer = [0; BUFFER_SIZE];
-        i2c.read(REG_FIFO, &mut read_buffer)
-            .expect("Unable to read from I2C");
+        i2c.read(REG_FIFO, &mut read_buffer)?;
 
-        (read_buffer, payload_length[0])
+        Ok((read_buffer, payload_length[0]))
+    }
+}
+
+impl<S: WriteBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+    pub fn write_buffer(&mut self, data: &mut [u8]) -> Result<(), I2C::Error> {
+        let i2c = &mut self.pins.i2c;
+
+        let mut addr = [0; 1];
+        i2c.read(REG_FIFO_TX_BASE_ADDR, &mut addr)?;
+        i2c.write(REG_FIFO_ADDR_PTR, &addr)?;
+
+        let mut payload_length = [0; 1];
+        i2c.read(REG_RX_NB_BYTES, &mut payload_length)?;
+
+        i2c.read(REG_FIFO, data)?;
+
+        Ok(())
+    }
+}
+
+impl<S: ChangeFrequency, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+    pub fn set_frequency(&mut self, frequency: f32) -> Result<(), I2C::Error> {
+        let freq: u32 = ((frequency * TWO_POW_19 as f32) / FXOSC as f32) as u32;
+        let freq_msb_byte = (freq >> 16) as u8 & 0b1111_1111;
+        let freq_mid_byte = (freq >> 8) as u8 & 0b1111_1111;
+        let freq_lsb_byte = freq as u8 & 0b1111_1111;
+
+        i2c_write_bits(&mut self.pins.i2c, REG_FR_MSB, 0b1111_1111, freq_msb_byte)?;
+        i2c_write_bits(&mut self.pins.i2c, REG_FR_MID, 0b1111_1111, freq_mid_byte)?;
+        i2c_write_bits(&mut self.pins.i2c, REG_FR_LSB, 0b1111_1111, freq_lsb_byte)?;
+        self.options.frequency = frequency;
+
+        Ok(())
+    }
+}
+
+impl<P: PowerPin, I2C: I2c> RadioDevice<SleepState, P, I2C> {
+    pub fn fsk_ook(&mut self) -> Result<(), I2C::Error> {
+        i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 0b1000_0000, 0b0)
+    }
+    pub fn lora(&mut self) -> Result<(), I2C::Error> {
+        i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 0b1000_0000, 0b1)
     }
 }
 
@@ -210,29 +208,17 @@ pub enum RadioError {
     RecieveError,
 }
 
-impl<P: PowerPin, I2C: I2c> Rfm95x<P, I2C> {
-    pub fn set_state(&mut self, state: RadioMode) -> Result<(), RadioError> {
-        self.state = state;
-        todo!()
-    }
-
-    pub fn get_state(&self) -> &RadioMode {
-        &self.state
-    }
-}
-
 impl RadioOptions {
     pub fn verify(&self) -> bool {
         Self::verify_power_value(&self.power)
             && Self::verify_gain_value(&self.gain)
             && Self::verify_frequency_value(&self.frequency)
     }
-
-    pub fn verify_power_value(power: &i8) -> bool {
+    pub fn verify_power_value(power: &u8) -> bool {
         (2..17).contains(power)
     }
 
-    pub fn verify_gain_value(gain: &i8) -> bool {
+    pub fn verify_gain_value(gain: &u8) -> bool {
         (1..6).contains(gain)
     }
 

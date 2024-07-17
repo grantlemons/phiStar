@@ -2,6 +2,8 @@
 
 pub const REG_FIFO: u8 = 0x00;
 pub const REG_OP_MODE: u8 = 0x01;
+pub const REG_FR_MSB: u8 = 0x06;
+pub const REG_FR_MID: u8 = 0x07;
 pub const REG_FR_LSB: u8 = 0x08;
 pub const REG_PA_CONFIG: u8 = 0x09;
 pub const REG_PA_RAMP: u8 = 0x0A;
