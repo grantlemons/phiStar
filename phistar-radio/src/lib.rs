@@ -26,7 +26,7 @@ macro_rules! add_state {
         impl RState for $n {}
         impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
             pub fn $fn(mut self) -> RadioDevice<$n, P, I2C> {
-                i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 0b0000_0011, $eq.into())
+                i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, $eq.into(), 2, 0)
                     .expect("Failed to change mode (I2C write error)");
 
                 RadioDevice {
@@ -70,14 +70,17 @@ impl Transmit for TXState {}
 pub fn i2c_write_bits<I2C: I2c>(
     i2c: &mut I2C,
     address: SevenBitAddress,
-    mask: u8,
     value: u8,
+    mask_start: usize,
+    mask_end: usize,
 ) -> Result<(), I2C::Error> {
     let mut address_contents = [0; 1];
     i2c.read(address, &mut address_contents)?;
 
+    let mask_len = (mask_start - mask_end) + 1;
+    let mask = ((1 << mask_len) - 1) << mask_end;
     address_contents[0] &= !mask;
-    address_contents[0] |= value & mask;
+    address_contents[0] |= (value << mask_end) & mask;
 
     i2c.write(address, &address_contents)?;
 
@@ -119,12 +122,12 @@ pub struct RadioDevice<T: RState, P: PowerPin, I2C: I2c> {
 
 impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     pub fn set_power(&mut self, power: u8) -> Result<(), I2C::Error> {
-        i2c_write_bits(&mut self.pins.i2c, REG_PA_CONFIG, 0b0000_1111, power)?;
+        i2c_write_bits(&mut self.pins.i2c, REG_PA_CONFIG, power, 3, 0)?;
         self.options.power = power;
         Ok(())
     }
     pub fn set_gain(&mut self, gain: u8) -> Result<(), I2C::Error> {
-        i2c_write_bits(&mut self.pins.i2c, REG_LNA, 0b1110_0000, gain)?;
+        i2c_write_bits(&mut self.pins.i2c, REG_LNA, gain, 7, 5)?;
         self.options.gain = gain;
         Ok(())
     }
@@ -132,8 +135,9 @@ impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
         i2c_write_bits(
             &mut self.pins.i2c,
             REG_MODEM_CONFIG_1,
-            0b1111_0000,
             bandwith.into(),
+            7,
+            4,
         )?;
         self.options.bandwith = bandwith;
         Ok(())
@@ -178,13 +182,13 @@ impl<S: WriteBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
 impl<S: ChangeFrequency, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     pub fn set_frequency(&mut self, frequency: f32) -> Result<(), I2C::Error> {
         let freq: u32 = ((frequency * TWO_POW_19 as f32) / FXOSC as f32) as u32;
-        let freq_msb_byte = (freq >> 16) as u8 & 0b1111_1111;
-        let freq_mid_byte = (freq >> 8) as u8 & 0b1111_1111;
-        let freq_lsb_byte = freq as u8 & 0b1111_1111;
+        let freq_msb_byte = (freq >> 16) as u8;
+        let freq_mid_byte = (freq >> 8) as u8;
+        let freq_lsb_byte = freq as u8;
 
-        i2c_write_bits(&mut self.pins.i2c, REG_FR_MSB, 0b1111_1111, freq_msb_byte)?;
-        i2c_write_bits(&mut self.pins.i2c, REG_FR_MID, 0b1111_1111, freq_mid_byte)?;
-        i2c_write_bits(&mut self.pins.i2c, REG_FR_LSB, 0b1111_1111, freq_lsb_byte)?;
+        i2c_write_bits(&mut self.pins.i2c, REG_FR_MSB, freq_msb_byte, 7, 0)?;
+        i2c_write_bits(&mut self.pins.i2c, REG_FR_MID, freq_mid_byte, 7, 0)?;
+        i2c_write_bits(&mut self.pins.i2c, REG_FR_LSB, freq_lsb_byte, 7, 0)?;
         self.options.frequency = frequency;
 
         Ok(())
@@ -193,19 +197,11 @@ impl<S: ChangeFrequency, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
 
 impl<P: PowerPin, I2C: I2c> RadioDevice<SleepState, P, I2C> {
     pub fn fsk_ook(&mut self) -> Result<(), I2C::Error> {
-        i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 0b1000_0000, 0b0)
+        i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 0, 7, 7)
     }
     pub fn lora(&mut self) -> Result<(), I2C::Error> {
-        i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 0b1000_0000, 0b1)
+        i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 1, 7, 7)
     }
-}
-
-#[derive(Debug)]
-pub enum RadioError {
-    InvalidOptions,
-    StateError,
-    TransmitError,
-    RecieveError,
 }
 
 impl RadioOptions {
