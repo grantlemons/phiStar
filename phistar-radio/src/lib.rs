@@ -163,7 +163,7 @@ impl<S: ReadBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
 }
 
 impl<S: WriteBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
-    pub fn write_buffer(&mut self, data: &mut [u8]) -> Result<(), I2C::Error> {
+    pub fn write_buffer(&mut self, data: &[u8]) -> Result<(), I2C::Error> {
         let i2c = &mut self.pins.i2c;
 
         let mut addr = [0; 1];
@@ -173,7 +173,7 @@ impl<S: WriteBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
         let mut payload_length = [0; 1];
         i2c.read(REG_RX_NB_BYTES, &mut payload_length)?;
 
-        i2c.read(REG_FIFO, data)?;
+        i2c.write(REG_FIFO, data)?;
 
         Ok(())
     }
