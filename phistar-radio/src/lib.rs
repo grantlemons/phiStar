@@ -101,25 +101,36 @@ pub struct RadioOptions {
 }
 
 pub trait PowerPin {
-    fn set_high(&mut self) -> Option<()>;
-    fn set_low(&mut self) -> Option<()>;
+    fn set_high(&mut self) -> Result<(), core::convert::Infallible>;
+    fn set_low(&mut self) -> Result<(), core::convert::Infallible>;
 }
 
 pub struct Rfm95xPins<P: PowerPin, I2C: I2c> {
     pub i2c: I2C,
     pub reset: P, // RFM_RST
-    pub dio5: P,
-    pub dio4: P,
-    pub dio3: P,
-    pub dio2: P,
-    pub dio1: P,
-    pub dio0: P,
+
+                  // pub dio5: P,
+                  // pub dio4: P,
+                  // pub dio3: P,
+                  // pub dio2: P,
+                  // pub dio1: P,
+                  // pub dio0: P,
 }
 
 pub struct RadioDevice<T: RState, P: PowerPin, I2C: I2c> {
     pins: Rfm95xPins<P, I2C>,
     options: RadioOptions,
     state: PhantomData<T>,
+}
+
+impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+    pub fn new(pins: Rfm95xPins<P, I2C>, options: RadioOptions) -> Self {
+        Self {
+            pins,
+            options,
+            state: PhantomData,
+        }
+    }
 }
 
 #[non_exhaustive]
@@ -133,11 +144,19 @@ pub enum RadioError {
 
 impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     pub fn set_power(&mut self, power: u8) -> Result<(), RadioError> {
+        if !RadioOptions::verify_power_value(&power) {
+            return Err(RadioError::InvalidParameters);
+        }
+
         i2c_write_bits(&mut self.pins.i2c, REG_PA_CONFIG, power, 3, 0)?;
         self.options.power = power;
         Ok(())
     }
     pub fn set_gain(&mut self, gain: u8) -> Result<(), RadioError> {
+        if !RadioOptions::verify_gain_value(&gain) {
+            return Err(RadioError::InvalidParameters);
+        }
+
         i2c_write_bits(&mut self.pins.i2c, REG_LNA, gain, 7, 5)?;
         self.options.gain = gain;
         Ok(())
@@ -196,6 +215,10 @@ impl<S: WriteBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
 
 impl<S: ChangeFrequency, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     pub fn set_frequency(&mut self, frequency: f32) -> Result<(), RadioError> {
+        if !RadioOptions::verify_frequency_value(&frequency) {
+            return Err(RadioError::InvalidParameters);
+        }
+
         let freq: u32 = ((frequency * TWO_POW_19 as f32) / FXOSC as f32) as u32;
         let freq_msb_byte = (freq >> 16) as u8;
         let freq_mid_byte = (freq >> 8) as u8;
