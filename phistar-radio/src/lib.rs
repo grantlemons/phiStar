@@ -20,8 +20,18 @@ pub trait Transmit: RState + WriteBuffer {}
 pub trait ReadBuffer: RState {}
 pub trait WriteBuffer: RState {}
 
+macro_rules! implement_marker_traits {
+    ($n:ident, $t:ident $(,$ts:ident)+) => {
+        impl $t for $n {}
+        implement_marker_traits!($n $(,$ts)+);
+    };
+    ($n:ident, $t:ident) => {
+        impl $t for $n {}
+    };
+    ($n:ident) => {};
+}
 macro_rules! add_state {
-    ($n:ident,$fn:ident,$eq:path) => {
+    ($n:ident, $fn:ident, $eq:path $(,$ts:ident)*) => {
         pub struct $n;
         impl RState for $n {}
         impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
@@ -41,31 +51,29 @@ macro_rules! add_state {
                 $eq
             }
         }
+        implement_marker_traits!($n $(,$ts)*);
     };
 }
-add_state!(SleepState, sleep, RadioMode::SLEEP);
-add_state!(StandByState, standby, RadioMode::STDBY);
-add_state!(FSTXState, fstx, RadioMode::FSTX);
-add_state!(TXState, tx, RadioMode::TX);
-add_state!(FSRXState, fsrx, RadioMode::FSRX);
-add_state!(RXContinuousState, rxcontinuous, RadioMode::RXCONTINUOUS);
-add_state!(RXSingleState, rxsingle, RadioMode::RXSINGLE);
+add_state!(SleepState, sleep, RadioMode::SLEEP, ChangeFrequency);
+add_state!(StandByState, standby, RadioMode::STDBY, ChangeFrequency);
+add_state!(FSTXState, fstx, RadioMode::FSTX, WriteBuffer, Transmit);
+add_state!(TXState, tx, RadioMode::TX, WriteBuffer, Transmit);
+add_state!(FSRXState, fsrx, RadioMode::FSRX, ReadBuffer, Recieve);
+add_state!(
+    RXContinuousState,
+    rxcontinuous,
+    RadioMode::RXCONTINUOUS,
+    ReadBuffer,
+    Recieve
+);
+add_state!(
+    RXSingleState,
+    rxsingle,
+    RadioMode::RXSINGLE,
+    ReadBuffer,
+    Recieve
+);
 add_state!(CADState, cad, RadioMode::CAD);
-
-impl ChangeFrequency for SleepState {}
-impl ChangeFrequency for StandByState {}
-
-impl ReadBuffer for RXContinuousState {}
-impl ReadBuffer for RXSingleState {}
-impl ReadBuffer for FSRXState {}
-impl Recieve for RXContinuousState {}
-impl Recieve for RXSingleState {}
-impl Recieve for FSRXState {}
-
-impl WriteBuffer for FSTXState {}
-impl WriteBuffer for TXState {}
-impl Transmit for FSTXState {}
-impl Transmit for TXState {}
 
 pub fn i2c_write_bits<I2C: I2c>(
     i2c: &mut I2C,
