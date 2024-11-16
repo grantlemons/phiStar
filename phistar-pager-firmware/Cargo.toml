@@ -7,11 +7,11 @@ version = "0.1.0"
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
 embedded-hal = { version = "1.0.0" }
+fugit = "0.3.7"
 
 defmt = "0.3"
 defmt-rtt = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 
-# We're using a Pico by default on this template
 adafruit-feather-rp2040-rfm9x = { git = "https://github.com/grantlemons/rp-hal-boards.git" }
 phistar-radio = { path = "../phistar-radio" }
