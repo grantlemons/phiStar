@@ -34,8 +34,8 @@ macro_rules! add_state {
     ($n:ident, $fn:ident, $eq:path $(,$ts:ident)*) => {
         pub struct $n;
         impl RState for $n {}
-        impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
-            pub fn $fn(mut self) -> RadioDevice<$n, P, I2C> {
+        impl<'a, S: RState, I2C: I2c> RadioDevice<'a, S, I2C> {
+            pub fn $fn(mut self) -> RadioDevice<'a, $n, I2C> {
                 i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, $eq.into(), 2, 0)
                     .expect("Failed to change mode (I2C write error)");
 
@@ -46,8 +46,8 @@ macro_rules! add_state {
                 }
             }
         }
-        impl<P: PowerPin, I2C: I2c> From<&RadioDevice<$n, P, I2C>> for RadioMode {
-            fn from(_: &RadioDevice<$n, P, I2C>) -> Self {
+        impl<'a, I2C: I2c> From<&RadioDevice<'a, $n, I2C>> for RadioMode {
+            fn from(_: &RadioDevice<$n, I2C>) -> Self {
                 $eq
             }
         }
@@ -113,26 +113,25 @@ pub trait PowerPin {
     fn set_low(&mut self) -> Result<(), core::convert::Infallible>;
 }
 
-pub struct Rfm95xPins<P: PowerPin, I2C: I2c> {
+pub struct Rfm95xPins<'a, I2C: I2c> {
     pub i2c: I2C,
-    pub reset: P, // RFM_RST
-
-                  // pub dio5: P,
-                  // pub dio4: P,
-                  // pub dio3: P,
-                  // pub dio2: P,
-                  // pub dio1: P,
-                  // pub dio0: P,
+    pub reset: &'a dyn PowerPin, // RFM_RST
+    pub dio5: &'a dyn PowerPin,
+    pub dio4: &'a dyn PowerPin,
+    pub dio3: &'a dyn PowerPin,
+    pub dio2: &'a dyn PowerPin,
+    pub dio1: &'a dyn PowerPin,
+    pub dio0: &'a dyn PowerPin,
 }
 
-pub struct RadioDevice<T: RState, P: PowerPin, I2C: I2c> {
-    pins: Rfm95xPins<P, I2C>,
+pub struct RadioDevice<'a, T: RState, I2C: I2c> {
+    pins: Rfm95xPins<'a, I2C>,
     options: RadioOptions,
     state: PhantomData<T>,
 }
 
-impl<P: PowerPin, I2C: I2c> RadioDevice<SleepState, P, I2C> {
-    pub fn new(pins: Rfm95xPins<P, I2C>, options: &RadioOptions) -> Result<Self, RadioError> {
+impl<'a, I2C: I2c> RadioDevice<'a, SleepState, I2C> {
+    pub fn new(pins: Rfm95xPins<'a, I2C>, options: &RadioOptions) -> Result<Self, RadioError> {
         let mut new = Self {
             pins,
             options: *options,
@@ -154,7 +153,7 @@ pub enum RadioError {
     InvalidParameters,
 }
 
-impl<S: ReadBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+impl<'a, S: ReadBuffer, I2C: I2c> RadioDevice<'a, S, I2C> {
     pub fn read_buffer(&mut self) -> Result<([u8; BUFFER_SIZE], u8), RadioError> {
         let i2c = &mut self.pins.i2c;
 
@@ -174,7 +173,7 @@ impl<S: ReadBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     }
 }
 
-impl<S: WriteBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+impl<'a, S: WriteBuffer, I2C: I2c> RadioDevice<'a, S, I2C> {
     pub fn write_buffer(&mut self, data: &[u8]) -> Result<(), RadioError> {
         let i2c = &mut self.pins.i2c;
 
@@ -193,7 +192,7 @@ impl<S: WriteBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     }
 }
 
-impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+impl<'a, S: RState, I2C: I2c> RadioDevice<'a, S, I2C> {
     pub fn set_power(&mut self, power: u8) -> Result<(), RadioError> {
         if !RadioOptions::verify_power_value(&power) {
             return Err(RadioError::InvalidParameters);
@@ -225,7 +224,7 @@ impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     }
 }
 
-impl<S: ChangeFrequency, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+impl<'a, S: ChangeFrequency, I2C: I2c> RadioDevice<'a, S, I2C> {
     pub fn apply_options(&mut self, options: &RadioOptions) -> Result<(), RadioError> {
         self.set_power(options.power)?;
         self.set_gain(options.gain)?;
@@ -253,7 +252,7 @@ impl<S: ChangeFrequency, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     }
 }
 
-impl<P: PowerPin, I2C: I2c> RadioDevice<SleepState, P, I2C> {
+impl<'a, I2C: I2c> RadioDevice<'a, SleepState, I2C> {
     pub fn fsk_ook(&mut self) -> Result<(), RadioError> {
         i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 0, 7, 7).map_err(|e| e.into())
     }
