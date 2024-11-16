@@ -12,6 +12,7 @@ pub enum RadioMode {
     CAD,
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<u8> for RadioMode {
     fn into(self) -> u8 {
         match self {
@@ -41,6 +42,7 @@ pub enum BandwithOptions {
     Bw500_0,
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<u8> for BandwithOptions {
     fn into(self) -> u8 {
         match self {

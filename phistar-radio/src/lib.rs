@@ -4,12 +4,12 @@ const BUFFER_SIZE: usize = 256;
 const FXOSC: u8 = 32;
 const TWO_POW_19: u32 = 524288;
 
-use core::{marker::PhantomData, usize};
+use core::marker::PhantomData;
 use embedded_hal::i2c::{Error, I2c, SevenBitAddress};
 
 mod config_options;
 mod constants;
-use config_options::*;
+pub use config_options::*;
 use constants::*;
 
 pub trait RState {}
@@ -131,13 +131,17 @@ pub struct RadioDevice<T: RState, P: PowerPin, I2C: I2c> {
     state: PhantomData<T>,
 }
 
-impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
-    pub fn new(pins: Rfm95xPins<P, I2C>, options: RadioOptions) -> Self {
-        Self {
+impl<P: PowerPin, I2C: I2c> RadioDevice<SleepState, P, I2C> {
+    pub fn new(pins: Rfm95xPins<P, I2C>, options: &RadioOptions) -> Result<Self, RadioError> {
+        let mut new = Self {
             pins,
-            options,
+            options: *options,
             state: PhantomData,
-        }
+        };
+        new.apply_options(options)?;
+        new.lora()?;
+
+        Ok(new)
     }
 }
 
@@ -148,38 +152,6 @@ pub enum RadioError {
     I2cError(#[from] embedded_hal::i2c::ErrorKind),
     #[error("Invalid parameters")]
     InvalidParameters,
-}
-
-impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
-    pub fn set_power(&mut self, power: u8) -> Result<(), RadioError> {
-        if !RadioOptions::verify_power_value(&power) {
-            return Err(RadioError::InvalidParameters);
-        }
-
-        i2c_write_bits(&mut self.pins.i2c, REG_PA_CONFIG, power, 3, 0)?;
-        self.options.power = power;
-        Ok(())
-    }
-    pub fn set_gain(&mut self, gain: u8) -> Result<(), RadioError> {
-        if !RadioOptions::verify_gain_value(&gain) {
-            return Err(RadioError::InvalidParameters);
-        }
-
-        i2c_write_bits(&mut self.pins.i2c, REG_LNA, gain, 7, 5)?;
-        self.options.gain = gain;
-        Ok(())
-    }
-    pub fn set_bandwith(&mut self, bandwith: BandwithOptions) -> Result<(), RadioError> {
-        i2c_write_bits(
-            &mut self.pins.i2c,
-            REG_MODEM_CONFIG_1,
-            bandwith.into(),
-            7,
-            4,
-        )?;
-        self.options.bandwith = bandwith;
-        Ok(())
-    }
 }
 
 impl<S: ReadBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
@@ -221,7 +193,47 @@ impl<S: WriteBuffer, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
     }
 }
 
+impl<S: RState, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+    pub fn set_power(&mut self, power: u8) -> Result<(), RadioError> {
+        if !RadioOptions::verify_power_value(&power) {
+            return Err(RadioError::InvalidParameters);
+        }
+
+        i2c_write_bits(&mut self.pins.i2c, REG_PA_CONFIG, power, 3, 0)?;
+        self.options.power = power;
+        Ok(())
+    }
+    pub fn set_gain(&mut self, gain: u8) -> Result<(), RadioError> {
+        if !RadioOptions::verify_gain_value(&gain) {
+            return Err(RadioError::InvalidParameters);
+        }
+
+        i2c_write_bits(&mut self.pins.i2c, REG_LNA, gain, 7, 5)?;
+        self.options.gain = gain;
+        Ok(())
+    }
+    pub fn set_bandwith(&mut self, bandwith: BandwithOptions) -> Result<(), RadioError> {
+        i2c_write_bits(
+            &mut self.pins.i2c,
+            REG_MODEM_CONFIG_1,
+            bandwith.into(),
+            7,
+            4,
+        )?;
+        self.options.bandwith = bandwith;
+        Ok(())
+    }
+}
+
 impl<S: ChangeFrequency, P: PowerPin, I2C: I2c> RadioDevice<S, P, I2C> {
+    pub fn apply_options(&mut self, options: &RadioOptions) -> Result<(), RadioError> {
+        self.set_power(options.power)?;
+        self.set_gain(options.gain)?;
+        self.set_bandwith(options.bandwith)?;
+        self.set_frequency(options.frequency)?;
+
+        Ok(())
+    }
     pub fn set_frequency(&mut self, frequency: f32) -> Result<(), RadioError> {
         if !RadioOptions::verify_frequency_value(&frequency) {
             return Err(RadioError::InvalidParameters);
@@ -247,24 +259,5 @@ impl<P: PowerPin, I2C: I2c> RadioDevice<SleepState, P, I2C> {
     }
     pub fn lora(&mut self) -> Result<(), RadioError> {
         i2c_write_bits(&mut self.pins.i2c, REG_OP_MODE, 1, 7, 7).map_err(|e| e.into())
-    }
-}
-
-impl RadioOptions {
-    pub fn verify(&self) -> bool {
-        Self::verify_power_value(&self.power)
-            && Self::verify_gain_value(&self.gain)
-            && Self::verify_frequency_value(&self.frequency)
-    }
-    pub fn verify_power_value(power: &u8) -> bool {
-        (2..17).contains(power)
-    }
-
-    pub fn verify_gain_value(gain: &u8) -> bool {
-        (1..6).contains(gain)
-    }
-
-    pub fn verify_frequency_value(frequency: &f32) -> bool {
-        (868.0..915.0).contains(frequency)
     }
 }
